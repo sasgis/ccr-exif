@@ -1,7 +1,7 @@
 {**************************************************************************************}
 {                                                                                      }
 { CCR Exif - Delphi class library for reading and writing image metadata               }
-{ Version 1.5.1                                                                        }
+{ Version 1.5.3                                                                        }
 {                                                                                      }
 { The contents of this file are subject to the Mozilla Public License Version 1.1      }
 { (the "License"); you may not use this file except in compliance with the License.    }
@@ -29,8 +29,7 @@ interface
 
 uses
   Windows, SysUtils, Classes, Graphics, Controls, Forms, Dialogs, ExtDlgs, Buttons,   
-  ActnList, StdActns, ComCtrls, StdCtrls, ExtCtrls, Grids, ValEdit, CCR.Exif.Demos,
-  System.Actions;
+  ActnList, StdActns, ComCtrls, StdCtrls, ExtCtrls, Grids, ValEdit, CCR.Exif.Demos;
 
 type
   TValueListEditor = class(ValEdit.TValueListEditor)
@@ -416,7 +415,7 @@ begin
     edtOriginatingProgram.Text := IPTCData.OriginatingProgram;
     edtProgramVersion.Text := IPTCData.ProgramVersion;
     edtObjectCycleCode.Text := IPTCData.ObjectCycleCode;
-    IPTCData.GetBylineValues(vleBylines.Strings);
+    IPTCData.GetBylineDetails(vleBylines.Strings);
     edtCity.Text := IPTCData.City;
     edtSubLocation.Text := IPTCData.SubLocation;
     edtProvinceOrState.Text := IPTCData.ProvinceOrState;
@@ -560,7 +559,7 @@ begin
     IPTCData.OriginatingProgram := edtOriginatingProgram.Text;
     IPTCData.ProgramVersion := edtProgramVersion.Text;
     IPTCData.ObjectCycleCode := edtObjectCycleCode.Text;
-    IPTCData.SetBylineValues(vleBylines.Strings);
+    IPTCData.SetBylineDetails(vleBylines.Strings);
     IPTCData.City := edtCity.Text;
     IPTCData.SubLocation := edtSubLocation.Text;
     IPTCData.ProvinceOrState := edtProvinceOrState.Text;

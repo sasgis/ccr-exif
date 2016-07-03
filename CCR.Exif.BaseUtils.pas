@@ -1,7 +1,7 @@
 {**************************************************************************************}
 {                                                                                      }
 { CCR Exif - Delphi class library for reading and writing image metadata               }
-{ Version 1.5.2 beta                                                                   }
+{ Version 1.5.3                                                                        }
 {                                                                                      }
 { The contents of this file are subject to the Mozilla Public License Version 1.1      }
 { (the "License"); you may not use this file except in compliance with the License.    }
@@ -14,7 +14,7 @@
 { The Original Code is CCR.Exif.BaseUtils.pas.                                         }
 {                                                                                      }
 { The Initial Developer of the Original Code is Chris Rolliston. Portions created by   }
-{ Chris Rolliston are Copyright (C) 2009-2012 Chris Rolliston. All Rights Reserved.    }
+{ Chris Rolliston are Copyright (C) 2009-2014 Chris Rolliston. All Rights Reserved.    }
 {                                                                                      }
 {**************************************************************************************}
 
@@ -24,11 +24,34 @@ unit CCR.Exif.BaseUtils;
 interface
 
 uses
-  Types, SysUtils, Classes,
-  {$IFNDEF UNICODE}WideStrings,{$ENDIF} CCR.Exif.StreamHelper;
+  Types, SysUtils, Classes, {$IFNDEF UNICODE}WideStrings,{$ENDIF}
+  {$IFDEF NeedHausladenByteStringsFix}System.ByteStrings,{$ENDIF}
+  {$IFDEF HasGenerics}Generics.Collections{$ELSE}Contnrs{$ENDIF},
+  CCR.Exif.StreamHelper;
 
-{ backfill basic types and routines for D2006-7 }
+{ Mappings for compatibility with compilers for mobile }
+type
+{$IFDEF NeedHausladenByteStringsFix} //see http://andy.jgknet.de/blog/2013/10/the-return-of-the-byte-strings/
+  AnsiChar = System.ByteStrings.AnsiChar;
+  AnsiString = System.ByteStrings.AnsiString;
+  PAnsiChar = System.ByteStrings.PAnsiChar;
+  RawByteString = System.ByteStrings.RawByteString;
+  UTF8String = System.ByteStrings.UTF8String;
+{$ENDIF}
+{$IFDEF HasGenerics}
+  TClassList = TList<TClass>;
+  TObjectList = TObjectList<TObject>;
+{$ELSE}
+  TClassList = Contnrs.TClassList;
+  TObjectList = Contnrs.TObjectList;
+{$ENDIF}
+{$IFDEF NEXTGEN}
+  {$WARNINGS OFF}
+  TSysCharSet = set of Char;
+  {$WARNINGS ON}
+{$ENDIF}
 
+{ Mappings for compatibility with older compilers }
 type
 {$IF not Declared(EProgrammerNotFound)}
   EProgrammerNotFound = class(Exception);
@@ -44,15 +67,16 @@ type
   {$IF not Declared(TBytes)}
   TBytes = array of Byte;           //added in D2007
   {$IFEND}
-function CharInSet(Ch: AnsiChar; const CharSet: TSysCharSet): Boolean; inline; overload;
-function CharInSet(Ch: WideChar; const CharSet: TSysCharSet): Boolean; inline; overload;
 function UpCase(const Ch: AnsiChar): AnsiChar; overload;
 function UpCase(const Ch: WideChar): WideChar; overload;
 function UTF8ToString(const UTF8: RawByteString): string; inline; overload;
 {$ENDIF}
+function IsCharIn(Ch: AnsiChar; const CharSet: TSysCharSet): Boolean; inline; overload;
+function IsCharIn(Ch: WideChar; const CharSet: TSysCharSet): Boolean; inline; overload; //not CharInSet to avoid ambiguous overload errors
 function UTF8ToString(UTF8Buffer: Pointer; ByteLen: Integer): string; overload;
 function BinToHexStr(Data: Pointer; Size: Integer): string; overload;
 function BinToHexStr(const Buffer; Size: Integer): string; overload; inline;
+function HexStrToBin(const Text: string): TBytes;
 
 function GetExecutableName: string; inline;
 
@@ -138,7 +162,11 @@ type
     class operator LessThanOrEqual(const A, B: TDateTimeTagValue): Boolean;
     class operator GreaterThan(const A, B: TDateTimeTagValue): Boolean;
     class operator GreaterThanOrEqual(const A, B: TDateTimeTagValue): Boolean;
-    function ToString: string;
+    function ToString: string; overload;
+    function ToString(const Format: string): string; overload;
+    {$IFDEF HasFormatSettings}
+    function ToString(const Format: string; const Settings: TFormatSettings): string; overload;
+    {$ENDIF}
     property AsString: string read ToString;
     function MissingOrInvalid: Boolean; inline;
     property Value: TDateTime read FValue;
@@ -214,6 +242,11 @@ type
     property AsString: string read ToString;
     property MissingOrInvalid: Boolean read FMissingOrInvalid;
     property Value: Word read FValue;
+  end;
+
+  TSmallPointHelper = record helper for TSmallPoint
+    class function CreateMissingOrInvalid: TSmallPoint; static;
+    function MissingOrInvalid: Boolean; inline;
   end;
 
   TUserMemoryStream = class(TCustomMemoryStream) //read-only stream access on an existing buffer;
@@ -538,7 +571,7 @@ implementation
 
 uses
   {$IFDEF MSWINDOWS}Windows,{$ENDIF}{$IFDEF POSIX}Posix.Unistd,{$ENDIF}
-  {$IFDEF HasIOUtils}IOUtils,{$ENDIF}Math, RTLConsts, Contnrs,
+  {$IFDEF HasIOUtils}IOUtils,{$ENDIF}Math, RTLConsts,
   CCR.Exif.Consts, CCR.Exif.TagIDs;
 
 type
@@ -622,17 +655,17 @@ type
     destructor Destroy; override;
   end;
 
-{$IFNDEF UNICODE}
-function CharInSet(Ch: AnsiChar; const CharSet: TSysCharSet): Boolean;
+function IsCharIn(Ch: AnsiChar; const CharSet: TSysCharSet): Boolean;
 begin
   Result := Ch in CharSet;
 end;
 
-function CharInSet(Ch: WideChar; const CharSet: TSysCharSet): Boolean;
+function IsCharIn(Ch: WideChar; const CharSet: TSysCharSet): Boolean;
 begin
   Result := (Ch <= High(AnsiChar)) and (AnsiChar(Ch) in CharSet);
 end;
 
+{$IFNDEF UNICODE}
 function UpCase(const Ch: AnsiChar): AnsiChar;
 begin
   Result := Ch;
@@ -664,16 +697,56 @@ begin
 end;
 
 function BinToHexStr(Data: Pointer; Size: Integer): string;
+const
+  Map: array[0..15] of Char = (#$30, #$31, #$32, #$33, #$34, #$35,
+    #$36, #$37, #$38, #$39, #$41, #$42, #$43, #$44, #$45, #$46);
+var
+  Buffer: PByteArray absolute Data;
+  I: Integer;
 begin
   SetString(Result, nil, 0);
   if Size = 0 then Exit;
   SetString(Result, nil, Size * 2);
-  BinToHex(PAnsiChar(Data), PChar(Result), Size);
+  for I := 0 to Size - 1 do
+  begin
+    Result[I * 2 + 1] := Map[Buffer[I] shr 4];
+    Result[I * 2 + 2] := Map[Buffer[I] and $0F];
+  end;
 end;
 
 function BinToHexStr(const Buffer; Size: Integer): string;
 begin
   Result := BinToHexStr(@Buffer, Size);
+end;
+
+function IsValidHexChar(Ch: Char): Boolean;
+begin
+  case Ch of
+    '0'..'9','A'..'F','a'..'f': Result := True;
+  else Result := False;
+  end;
+end;
+
+function HexStrToBin(const Text: string): TBytes;
+const
+  Map: array['0'..'f'] of SmallInt =
+    ( 0, 1, 2, 3, 4, 5, 6, 7, 8, 9,-1,-1,-1,-1,-1,-1,
+     -1,10,11,12,13,14,15,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
+     -1,10,11,12,13,14,15);
+var
+  Ch1, Ch2: Char;
+  I: Integer;
+begin
+  SetLength(Result, Length(Text) div 2);
+  for I := 0 to High(Result) do
+  begin
+    Ch1 := Text[I * 2 + 1];
+    Ch2 := Text[I * 2 + 2];
+    if not IsValidHexChar(Ch1) or not IsValidHexChar(Ch2) then
+      raise EInvalidOperation.CreateFmt(SInvalidHexString, [Text]);
+    Result[I] := (Map[Ch1] shl 4) + Map[Ch2];
+  end;
 end;
 
 {$IF Declared(TPath)}
@@ -920,6 +993,24 @@ begin
   else
     Result := DateTimeToStr(Value);
 end;
+
+function TDateTimeTagValue.ToString(const Format: string): string;
+begin
+  if MissingOrInvalid then
+    Result := ''
+  else
+    DateTimeToString(Result, Format, Value);
+end;
+
+{$IFDEF HasFormatSettings}
+function TDateTimeTagValue.ToString(const Format: string; const Settings: TFormatSettings): string;
+begin
+  if MissingOrInvalid then
+    Result := ''
+  else
+    DateTimeToString(Result, Format, Value, Settings);
+end;
+{$ENDIF}
 
 class operator TDateTimeTagValue.Equal(const A, B: TDateTimeTagValue): Boolean;
 begin
@@ -1231,6 +1322,19 @@ begin
   Result := not (A = B);
 end;
 
+{ TSmallPointHelper }
+
+class function TSmallPointHelper.CreateMissingOrInvalid: TSmallPoint;
+begin
+  Result.x := -1;
+  Result.y := -1;
+end;
+
+function TSmallPointHelper.MissingOrInvalid: Boolean;
+begin
+  Result := InvalidPoint(Self);
+end;
+
 { TUserMemoryStream }
 
 constructor TUserMemoryStream.Create(Memory: Pointer; Size: Integer);
@@ -1313,8 +1417,11 @@ end;
 
 class function TAdobeBlock.GetValidSignature(const S: AnsiString): AnsiString;
 begin
-  Result := StringOfChar(AnsiChar(' '), 4);
-  StrPLCopy(PAnsiChar(Result), S, 4);
+  case Length(S) of
+    0..3: Result := S + StringOfChar(AnsiChar(' '), 4 - Length(S));
+    4: Result := S;
+  else Result := Copy(S, 1, 4);
+  end;
 end;
 
 constructor TAdobeBlock.Create;
@@ -1428,10 +1535,10 @@ end;
 
 procedure TAdobeBlock.SaveToStream(Stream: TStream);
 var
-  Buffer: array[0..4] of AnsiChar;
   Len: Integer;
 begin
-  Stream.WriteBuffer(StrPLCopy(Buffer, FSignature, 4)^, 4);
+  Assert(Length(FSignature) = 4);
+  Stream.WriteBuffer(Pointer(FSignature)^, 4);
   Stream.WriteWord(FTypeID, BigEndian);
   Len := Length(FName);
   if Len > High(Byte) then Len := High(Byte);

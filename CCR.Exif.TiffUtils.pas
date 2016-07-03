@@ -1,7 +1,7 @@
 {**************************************************************************************}
 {                                                                                      }
 { CCR Exif - Delphi class library for reading and writing image metadata               }
-{ Version 1.5.2 beta                                                                   }
+{ Version 1.5.3                                                                        }
 {                                                                                      }
 { The contents of this file are subject to the Mozilla Public License Version 1.1      }
 { (the "License"); you may not use this file except in compliance with the License.    }
@@ -14,7 +14,7 @@
 { The Original Code is CCR.Exif.TiffUtils.pas.                                         }
 {                                                                                      }
 { The Initial Developer of the Original Code is Chris Rolliston. Portions created by   }
-{ Chris Rolliston are Copyright (C) 2009-2012 Chris Rolliston. All Rights Reserved.    }
+{ Chris Rolliston are Copyright (C) 2009-2014 Chris Rolliston. All Rights Reserved.    }
 {                                                                                      }
 {**************************************************************************************}
 
@@ -68,9 +68,11 @@ type
     constructor Create(ANumerator: LongWord; ADenominator: LongWord = 1); overload;
     constructor Create(const AQuotient: Currency); overload;
     constructor CreateFromString(const AString: string);
-    function AsString: string;
+    class function CreateMissingOrInvalid: TTiffLongWordFraction; static;
+    function AsString: string; deprecated {$IFDEF DepCom}'Use ToString instead'{$ENDIF};
     function MissingOrInvalid: Boolean;
     function Quotient: Extended;
+    function ToString: string;
     case Integer of
       0: (Numerator, Denominator: LongWord);
       1: (PackedValue: Int64);
@@ -80,9 +82,11 @@ type
     constructor Create(ANumerator: LongInt; ADenominator: LongInt = 1); overload;
     constructor Create(const AQuotient: Currency); overload;
     constructor CreateFromString(const AString: string);
-    function AsString: string;
+    class function CreateMissingOrInvalid: TTiffLongIntFraction; static;
+    function AsString: string; deprecated {$IFDEF DepCom}'Use ToString instead'{$ENDIF};
     function MissingOrInvalid: Boolean;
     function Quotient: Extended;
+    function ToString: string;
     case Integer of
       0: (Numerator, Denominator: LongInt);
       1: (PackedValue: Int64);
@@ -220,7 +224,7 @@ type
     FSource: ITiffDirectory;
     FSourceInfo: TTiffTagInfoDynArray;
     FSourceParser: ITiffParser;
-    FTagsToWrite: TList;
+    FTagsToWrite: TObjectList;
     procedure AddTag(Tag: TTagToWrite); overload;
     function FindTagIndex(AID: TTiffTagID; out Index: Integer): Boolean;
     function GetTag(Index: Integer): TTagToWrite;
@@ -290,7 +294,7 @@ procedure WriteTiffHeader(Stream: TStream; Endianness: TEndianness;
 
 implementation
 
-uses Contnrs, Math, RTLConsts, CCR.Exif.Consts, CCR.Exif.TagIDs;
+uses Math, RTLConsts, CCR.Exif.Consts, CCR.Exif.TagIDs;
 
 function TryLoadJpegImageFromStream(const AJpegImage: IStreamPersist; AStream: TStream): Boolean;
 var
@@ -548,29 +552,36 @@ end;
 constructor TTiffLongIntFraction.CreateFromString(const AString: string);
 var
   DivSignPos: Integer;
-  Result: Boolean;
+  Quotient: Currency;
+  Valid: Boolean;
 begin
   DivSignPos := Pos('/', AString);
   if DivSignPos <> 0 then
-    Result := TryStrToInt(Copy(AString, 1, DivSignPos - 1), Numerator) and
+    Valid := TryStrToInt(Copy(AString, 1, DivSignPos - 1), Numerator) and
       TryStrToInt(Copy(AString, DivSignPos + 1, MaxInt), Denominator)
   else
   begin
-    Result := TryStrToInt(AString, Numerator);
-    if Result then Denominator := 1;
+    Valid := TryStrToCurr(AString, Quotient);
+    if Valid then
+      try
+        Create(Quotient);
+      except
+        on ERangeError do Valid := False;
+      end;
   end;
-  if not Result then
+  if not Valid then
     PackedValue := 0;
+end;
+
+class function TTiffLongIntFraction.CreateMissingOrInvalid: TTiffLongIntFraction;
+begin
+  Result.Numerator := 0;
+  Result.Denominator := 0;
 end;
 
 function TTiffLongIntFraction.AsString: string;
 begin
-  if MissingOrInvalid then
-    Result := ''
-  else if Denominator = 1 then
-    Result := IntToStr(Numerator)
-  else
-    FmtStr(Result, '%d/%d', [Numerator, Denominator]);
+  Result := ToString;
 end;
 
 function TTiffLongIntFraction.MissingOrInvalid: Boolean;
@@ -584,6 +595,16 @@ begin
     Result := 0
   else
     Result := Numerator / Denominator
+end;
+
+function TTiffLongIntFraction.ToString: string;
+begin
+  if MissingOrInvalid then
+    Result := ''
+  else if Denominator = 1 then
+    Result := IntToStr(Numerator)
+  else
+    FmtStr(Result, '%d/%d', [Numerator, Denominator]);
 end;
 
 function TryStrToLongWord(const S: string; var Value: LongWord): Boolean;
@@ -615,29 +636,36 @@ end;
 constructor TTiffLongWordFraction.CreateFromString(const AString: string);
 var
   DivSignPos: Integer;
-  Result: Boolean;
+  Quotient: Currency;
+  Valid: Boolean;
 begin
   DivSignPos := Pos('/', AString);
   if DivSignPos <> 0 then
-    Result := TryStrToLongWord(Copy(AString, 1, DivSignPos - 1), Numerator) and
+    Valid := TryStrToLongWord(Copy(AString, 1, DivSignPos - 1), Numerator) and
       TryStrToLongWord(Copy(AString, DivSignPos + 1, MaxInt), Denominator)
   else
   begin
-    Result := TryStrToLongWord(AString, Numerator);
-    if Result then Denominator := 1;
+    Valid := TryStrToCurr(AString, Quotient);
+    if Valid then
+      try
+        Create(Quotient);
+      except
+        on ERangeError do Valid := False;
+      end;
   end;
-  if not Result then
+  if not Valid then
     PackedValue := 0;
+end;
+
+class function TTiffLongWordFraction.CreateMissingOrInvalid: TTiffLongWordFraction;
+begin
+  Result.Numerator := 0;
+  Result.Denominator := 0;
 end;
 
 function TTiffLongWordFraction.AsString: string;
 begin
-  if MissingOrInvalid then
-    Result := ''
-  else if Denominator = 1 then
-    Result := IntToStr(Numerator)
-  else
-    FmtStr(Result, '%d/%d', [Numerator, Denominator]);
+  Result := ToString;
 end;
 
 function TTiffLongWordFraction.MissingOrInvalid: Boolean;
@@ -651,6 +679,16 @@ begin
     Result := 0
   else
     Result := Numerator / Denominator
+end;
+
+function TTiffLongWordFraction.ToString: string;
+begin
+  if MissingOrInvalid then
+    Result := ''
+  else if Denominator = 1 then
+    Result := IntToStr(Numerator)
+  else
+    FmtStr(Result, '%d/%d', [Numerator, Denominator]);
 end;
 
 { TIFF parsing routines }
@@ -1482,12 +1520,12 @@ var
   Index: Integer;
 begin
   Result := FindTagIndex(ID, Index);
-  if Result then Tag := FTagsToWrite.List[Index];
+  if Result then Tag := TTagToWrite(FTagsToWrite[Index]);
 end;
 
 function TTiffDirectoryRewriter.GetTag(Index: Integer): TTagToWrite;
 begin
-  Result := FTagsToWrite[Index];
+  Result := TTagToWrite(FTagsToWrite[Index]);
 end;
 
 function TTiffDirectoryRewriter.GetTagCount: Integer;
@@ -1523,7 +1561,7 @@ begin
   Result := True;
   if SubDir.FindTagIndex(ttOffsetSchema, Index) then //Aim to move the maker note back
   begin                                              //if an MS application such as the
-    Tag := SubDir.FTagsToWrite.List[Index];          //Windows shell has moved it.
+    Tag := TTagToWrite(SubDir.FTagsToWrite[Index]);  //Windows shell has moved it.
     if (Tag.DataType = tdLongInt) and (Tag.ElementCount = 1) then
     begin
       if Tag is TExternalTiffTagToWrite then
@@ -1578,7 +1616,7 @@ begin
   FNewIFDOffset := FixupNextOffset(2 + TTiffTag.HeaderSize * FTagsToWrite.Count + 4);
   for I := 0 to FTagsToWrite.Count - 1 do
   begin
-    Tag := FTagsToWrite.List[I];
+    Tag := TTagToWrite(FTagsToWrite[I]);
     if Tag = ProtectedTag then Continue; //assume its NewDataOffset property has already been set
     if Tag.DataSize > 4 then
       Tag.NewDataOffset := FixupNextOffset(Tag.DataSize)
@@ -1601,11 +1639,11 @@ var
   Tag: TTagToWrite;
 begin
   //write the IFD
-  AStream.Seek(ABasePosition + NewIFDOffset, soFromBeginning);
+  AStream.Seek(ABasePosition + NewIFDOffset, soBeginning);
   AStream.WriteWord(FTagsToWrite.Count, AEndianness);
   for I := 0 to FTagsToWrite.Count - 1 do
   begin
-    Tag := FTagsToWrite.List[I];
+    Tag := TTagToWrite(FTagsToWrite[I]);
     AStream.WriteWord(Tag.ID, AEndianness);
     AStream.WriteWord(Ord(Tag.DataType), AEndianness);
     AStream.WriteLongInt(Tag.ElementCount, AEndianness);
@@ -1618,7 +1656,7 @@ begin
   //write any offsetted tag data and sub-directories
   for I := 0 to FTagsToWrite.Count - 1 do
   begin
-    Tag := FTagsToWrite.List[I];
+    Tag := TTagToWrite(FTagsToWrite[I]);
     if Tag.DataSize > 4 then
     begin
       AStream.Seek(ABasePosition + Tag.NewDataOffset, soBeginning);
@@ -1638,7 +1676,7 @@ begin
       Stream.Position := BasePosition + FImageInfo[I].OldOffset;
       Stream.ReadBuffer(Buffer[0], FImageInfo[I].ByteCount);
     end;
-    AStream.Seek(ABasePosition + FImageInfo[I].NewOffset, soFromBeginning);
+    AStream.Seek(ABasePosition + FImageInfo[I].NewOffset, soBeginning);
     AStream.WriteBuffer(Buffer[0], FImageInfo[I].ByteCount);
   end;
 end;
@@ -1702,11 +1740,11 @@ var
   I: Integer;
   Parser: ITiffParser;
   Rewriter: TTiffDirectoryRewriter;
-  Rewriters: TList;
+  Rewriters: TObjectList;
 
   function GetRewriter(Index: Integer): TTiffDirectoryRewriter;
   begin
-    Result := Rewriters.List[Index];
+    Result := TTiffDirectoryRewriter(Rewriters[Index]);
   end;
 begin
   NewBasePosition := OutStream.Position;

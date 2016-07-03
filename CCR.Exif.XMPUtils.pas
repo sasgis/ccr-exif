@@ -1,7 +1,7 @@
 ﻿{**************************************************************************************}
 {                                                                                      }
 { CCR Exif - Delphi class library for reading and writing image metadata               }
-{ Version 1.5.2 beta                                                                   }
+{ Version 1.5.3                                                                        }
 {                                                                                      }
 { The contents of this file are subject to the Mozilla Public License Version 1.1      }
 { (the "License"); you may not use this file except in compliance with the License.    }
@@ -14,7 +14,7 @@
 { The Original Code is CCR.Exif.XMPUtils.pas.                                          }
 {                                                                                      }
 { The Initial Developer of the Original Code is Chris Rolliston. Portions created by   }
-{ Chris Rolliston are Copyright (C) 2009-2012 Chris Rolliston. All Rights Reserved.    }
+{ Chris Rolliston are Copyright (C) 2009-2014 Chris Rolliston. All Rights Reserved.    }
 {                                                                                      }
 {**************************************************************************************}
 
@@ -59,9 +59,6 @@ type
 
   TKnownXMPNamespaces = record //personally I wouldn't have the 'T', but I'll keep with the D2009+ style...
   private class var
-    FKnownURIs: TUnicodeStringList;
-    FKnownIndices: array[TXMPKnownNamespace] of Integer;
-    class procedure NeedKnownURIs; static;
     class function GetPreferredPrefix(Namespace: TXMPKnownNamespace): UnicodeString; static;
     class function GetURI(Namespace: TXMPKnownNamespace): UnicodeString; static;
   public
@@ -126,7 +123,7 @@ type
     FParentNamespace: Boolean;
     FParentProperty: TXMPProperty;
     FSchema: TXMPSchema;
-    FSubProperties: TList;
+    FSubProperties: TObjectList;
     FValue: UnicodeString;
     procedure NamespaceInfoChanged(Sender: TObject);
     procedure SetKind(const Value: TXMPPropertyKind);
@@ -153,6 +150,7 @@ type
     function FindSubProperty(const AName: UnicodeString; out Prop: TXMPProperty): Boolean;
     function ReadValue(const Default: Boolean): Boolean; overload;
     function ReadValue(const Default: Integer): Integer; overload;
+    function ReadValue(const Default: TDateTime): TDateTime; overload;
     function ReadValue(const Default: UnicodeString = ''): UnicodeString; overload;
     function RemoveSubProperty(const AName: UnicodeString): Boolean;
     function HasNamedSubProperties: Boolean; overload;
@@ -163,6 +161,7 @@ type
     procedure UpdateSubProperty(const SubPropName: UnicodeString; NewValue: Integer); overload;
     procedure UpdateSubProperty(const SubPropName: UnicodeString; NewValue: Boolean); overload;
     procedure WriteValue(const NewValue: UnicodeString); overload;
+    procedure WriteValue(const NewValue: TDateTime); overload;
     procedure WriteValue(const NewValue: Integer); overload;
     procedure WriteValue(const NewValue: Boolean); overload;
     property Kind: TXMPPropertyKind read FKind write SetKind;
@@ -181,7 +180,7 @@ type
     FLoadingProperty: Boolean;
     FNamespaceInfo: TXMPNamespaceInfo;
     FOwner: TXMPPacket;
-    FProperties: TList;
+    FProperties: TObjectList;
     procedure NamespaceInfoChanged(Sender: TObject);
   protected
     function LoadProperty(const ASourceNode: IDOMNode): TXMPProperty;
@@ -195,7 +194,7 @@ type
     constructor Create(AOwner: TXMPPacket; const AURI: UnicodeString);
     destructor Destroy; override;
     function GetEnumerator: IXMPPropertyEnumerator;
-    function AddProperty(const AName: UnicodeString): TXMPProperty; 
+    function AddProperty(const AName: UnicodeString): TXMPProperty;
     function FindProperty(const AName: UnicodeString; var AProperty: TXMPProperty): Boolean;
     function RemoveProperty(const AName: UnicodeString): Boolean;
     function RemoveProperties(const ANames: array of UnicodeString): Boolean;
@@ -303,6 +302,23 @@ type
     property Schemas[Kind: TXMPKnownNamespace]: TXMPSchema read FindOrAddSchema; default;
     property Schemas[Index: Integer]: TXMPSchema read GetSchema; default;
     property Schemas[const URI: UnicodeString]: TXMPSchema read FindOrAddSchema; default;
+    { TCustomIniFile-like value getters and setters for convenience }
+    function ReadBool(SchemaKind: TXMPKnownNamespace; const PropertyName: string; DefValue: Boolean): Boolean; overload;
+    function ReadBool(const SchemaURI: string; const PropertyName: string; DefValue: Boolean): Boolean; overload;
+    function ReadDateTime(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const DefValue: TDateTime): TDateTime; overload;
+    function ReadDateTime(const SchemaURI: string; const PropertyName: string; const DefValue: TDateTime): TDateTime; overload;
+    function ReadInteger(SchemaKind: TXMPKnownNamespace; const PropertyName: string; DefValue: Integer): Integer; overload;
+    function ReadInteger(const SchemaURI: string; const PropertyName: string; DefValue: Integer): Integer; overload;
+    function ReadString(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const DefValue: string): string; overload;
+    function ReadString(const SchemaURI: string; const PropertyName: string; const DefValue: string): string; overload;
+    procedure WriteBool(SchemaKind: TXMPKnownNamespace; const PropertyName: string; Value: Boolean);  overload; inline;
+    procedure WriteBool(const SchemaURI: string; const PropertyName: string; Value: Boolean);  overload; inline;
+    procedure WriteDateTime(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const Value: TDateTime); overload; inline;
+    procedure WriteDateTime(const SchemaURI: string; const PropertyName: string; const Value: TDateTime); overload; inline;
+    procedure WriteInteger(SchemaKind: TXMPKnownNamespace; const PropertyName: string; Value: Integer); overload; inline;
+    procedure WriteInteger(const SchemaURI: string; const PropertyName: string; Value: Integer); overload; inline;
+    procedure WriteString(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const Value: string); overload; inline;
+    procedure WriteString(const SchemaURI: string; const PropertyName: string; const Value: string); overload; inline;
   published
     property Empty: Boolean read GetEmpty;
     property RawXML: UTF8String read GetRawXML write SetRawXML;
@@ -315,12 +331,13 @@ const
   XMPBoolStrs: array[Boolean] of string = ('False', 'True'); //case as per the XMP spec
 
 function DateTimeToXMPString(const Value: TDateTime; ApplyLocalBias: Boolean = True): UnicodeString;
+function XMPStringToDateTime(const Value: string; AsUTCTime: Boolean = False): TDateTime;
 function EscapeXML(const Source: UnicodeString): UnicodeString;
 
 implementation
 
 uses
-  {$IFDEF HasTTimeZone}TimeSpan{$ELSE}Windows{$ENDIF}, Math, RTLConsts, Contnrs, DateUtils, StrUtils,
+  {$IFDEF HasTTimeZone}TimeSpan{$ELSE}Windows{$ENDIF}, Math, RTLConsts, SysConst, DateUtils, StrUtils,
   CCR.Exif.Consts, CCR.Exif.TagIDs, CCR.Exif.StreamHelper;
 
 const
@@ -351,13 +368,66 @@ type
   TXMPPropertyEnumerator = class(TInterfacedObject, IXMPPropertyEnumerator)
   strict private
     FIndex: Integer;
-    FSource: TList;
+    FSource: TObjectList;
   protected
     function GetCurrent: TXMPProperty;
     function MoveNext: Boolean;
   public
-    constructor Create(Source: TList);
+    constructor Create(Source: TObjectList);
   end;
+
+const
+  KnownURIs: array[TXMPKnownNamespace] of string = (
+    RDF.URI,
+    'http://ns.adobe.com/camera-raw-settings/1.0/',
+    'http://ns.adobe.com/xap/1.0/g',
+    'http://ns.adobe.com/xap/1.0/sType/Dimensions#',
+    'http://purl.org/dc/elements/1.1/',
+    'http://ns.adobe.com/xap/1.0/sType/Font#',
+    'http://ns.adobe.com/exif/1.0/',
+    'http://ns.adobe.com/exif/1.0/aux/',
+    'http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/',
+    'http://ns.adobe.com/xap/1.0/sType/Job#',
+    'http://ns.microsoft.com/photo/1.0',
+    'http://ns.adobe.com/pdf/1.3/',
+    'http://ns.adobe.com/photoshop/1.0/',
+    'http://ns.adobe.com/xap/1.0/sType/ResourceEvent#',
+    'http://ns.adobe.com/xap/1.0/sType/ResourceRef#',
+    'http://ns.adobe.com/xap/1.0/g/img/',
+    'http://ns.adobe.com/tiff/1.0/',
+    'http://ns.adobe.com/xap/1.0/sType/Version#',
+    'http://ns.adobe.com/xap/1.0/',
+    'http://ns.adobe.com/xap/1.0/bj/',
+    'http://ns.adobe.com/xmp/1.0/DynamicMedia/',
+    'http://ns.adobe.com/xap/1.0/mm/',
+    'http://ns.adobe.com/xap/1.0/t/pg/',
+    'http://ns.adobe.com/xap/1.0/rights/');
+
+  PreferredPrefixes: array[TXMPKnownNamespace] of string = (
+    {xsRDF} RDF.PreferredPrefix,
+    {xsCameraRaw} 'crs',
+    {xsColorant} 'xmpG',
+    {xsDimensions} 'stDim',
+    {xsDublinCore} 'dc',
+    {xsFont} 'stFnt',
+    {xsExif} 'exif',
+    {xsExifAux} 'aux',
+    {xsIPTC} 'Iptc4xmpCore',
+    {xsJob} 'stJob',
+    {xsMicrosoftPhoto} 'MicrosoftPhoto',
+    {xsPDF} 'pdf',
+    {xsPhotoshop} 'photoshop',
+    {xsResourceEvent} 'stEvt',
+    {xsResourceRef} 'stRef',
+    {xsThumbnail} 'xmpGImg',
+    {xsTIFF} 'tiff',
+    {xsVersion} 'stVer',
+    {xsXMPBasic} 'xmp',
+    {xsXMPBasicJobTicket} 'xmpBJ',
+    {xsXMPDynamicMedia} 'xmpDM',
+    {xsXMPMediaManagement} 'xmpMM',
+    {xsXMPPagedText} 'xmpTPg',
+    {xsXMPRights} 'xmpRights');
 
 function GetUTCOffset(const Value: TDateTime; out AHours, AMins: Integer): Int64;
 {$IFDEF HasTTimeZone}
@@ -422,6 +492,73 @@ begin
   if ApplyLocalBias then
     Result := Format('%s%s%.2d:%.2d', [Result,
       PlusNegSyms[GetUTCOffset(Value, Hours, Mins) >= 0], Hours, Mins]);
+end;
+
+function XMPStringToDateTime(const Value: string; AsUTCTime: Boolean = False): TDateTime;
+var
+  SeekPtr: PChar;
+
+  function ReadDigit: Byte;
+  begin
+    case SeekPtr^ of
+      '0'..'9': Result := Ord(SeekPtr^) - Ord('0');
+    else raise EConvertError.CreateResFmt(@SInvalidInteger, [string(SeekPtr^)]);
+    end;
+    Inc(SeekPtr);
+  end;
+
+  function Read2Digits: Word;
+  begin
+    Result := ReadDigit * 10 + ReadDigit;
+  end;
+
+  function Read4Digits: Word;
+  begin
+    Result := ReadDigit * 1000 + ReadDigit * 100 + ReadDigit * 10 + ReadDigit;
+  end;
+
+  function Read2DigitsAfter(CharsToSkip: Integer): Word;
+  begin
+    Inc(SeekPtr, CharsToSkip);
+    Result := ReadDigit * 10 + ReadDigit;
+  end;
+var
+  Minus: Boolean;
+  Year, Month, Day, Hour, Min, Sec, MSecs: Integer;
+  Offset: TDateTime;
+begin
+  SeekPtr := PChar(Value);
+  Year := Read4Digits;
+  Month := Read2DigitsAfter(1);
+  Day := Read2DigitsAfter(1);
+  Result := EncodeDate(Year, Month, Day);
+  if SeekPtr^ = #0 then Exit;
+  Hour := Read2DigitsAfter(1);
+  Min := Read2DigitsAfter(1);
+  Sec := Read2DigitsAfter(1);
+  MSecs := 0;
+  if SeekPtr^ = '.' then
+  begin
+    Inc(SeekPtr);
+    repeat
+      MSecs := MSecs * 10 + ReadDigit;
+    until IsCharIn(SeekPtr^, [#0, 'Z', 'z', '-', '+']);
+  end;
+  Result := Result + EncodeTime(Hour, Min, Sec, MSecs);
+  if AsUTCTime then Exit;
+  case SeekPtr^ of
+    #0, 'Z', 'z': Exit;
+    '-': Minus := True;
+    '+': Minus := False;
+  else raise EConvertError.CreateResFmt(@SInvalidDateTime, [Value]);
+  end;
+  Hour := Read2DigitsAfter(1);
+  Min := Read2DigitsAfter(1);
+  Offset := EncodeTime(Hour, Min, 0, 0);
+  if Minus then
+    Result := Result - Offset
+  else
+    Result := Result + Offset;
 end;
 
 function DefinesNS(const Attr: IDOMNode): Boolean;
@@ -494,91 +631,29 @@ end;
 
 { TKnownXMPNamespaces }
 
-class procedure TKnownXMPNamespaces.NeedKnownURIs;
-var
-  I: Integer;
-begin
-  if FKnownURIs <> nil then Exit;
-  FKnownURIs := TUnicodeStringList.Create;
-  with FKnownURIs do
-  begin
-    AddObject(RDF.URI, TObject(xsRDF));
-    AddObject('http://ns.adobe.com/camera-raw-settings/1.0/', TObject(xsCameraRaw));
-    AddObject('http://ns.adobe.com/xap/1.0/g', TObject(xsColorant));
-    AddObject('http://ns.adobe.com/xap/1.0/sType/Dimensions#', TObject(xsDimensions));
-    AddObject('http://purl.org/dc/elements/1.1/', TObject(xsDublinCore));
-    AddObject('http://ns.adobe.com/xap/1.0/sType/Font#', TObject(xsFont));
-    AddObject('http://ns.adobe.com/exif/1.0/', TObject(xsExif));
-    AddObject('http://ns.adobe.com/exif/1.0/aux/', TObject(xsExifAux));
-    AddObject('http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/', TObject(xsIPTC));
-    AddObject('http://ns.adobe.com/xap/1.0/sType/Job#', TObject(xsJob));
-    AddObject('http://ns.microsoft.com/photo/1.0', TObject(xsMicrosoftPhoto));
-    AddObject('http://ns.adobe.com/pdf/1.3/', TObject(xsPDF));
-    AddObject('http://ns.adobe.com/photoshop/1.0/', TObject(xsPhotoshop));
-    AddObject('http://ns.adobe.com/xap/1.0/sType/ResourceEvent#', TObject(xsResourceEvent));
-    AddObject('http://ns.adobe.com/xap/1.0/sType/ResourceRef#', TObject(xsResourceRef));
-    AddObject('http://ns.adobe.com/xap/1.0/g/img/', TObject(xsThumbnail));
-    AddObject('http://ns.adobe.com/tiff/1.0/', TObject(xsTIFF));
-    AddObject('http://ns.adobe.com/xap/1.0/sType/Version#', TObject(xsVersion));
-    AddObject('http://ns.adobe.com/xap/1.0/', TObject(xsXMPBasic));
-    AddObject('http://ns.adobe.com/xap/1.0/bj/', TObject(xsXMPBasicJobTicket));
-    AddObject('http://ns.adobe.com/xmp/1.0/DynamicMedia/', TObject(xsXMPDynamicMedia));
-    AddObject('http://ns.adobe.com/xap/1.0/mm/', TObject(xsXMPMediaManagement));
-    AddObject('http://ns.adobe.com/xap/1.0/t/pg/', TObject(xsXMPPagedText));
-    AddObject('http://ns.adobe.com/xap/1.0/rights/', TObject(xsXMPRights));
-    Sorted := True;
-    for I := Count - 1 downto 0 do
-      FKnownIndices[TXMPKnownNamespace(Objects[I])] := I;
-  end;
-end;
-
 class function TKnownXMPNamespaces.GetPreferredPrefix(Namespace: TXMPKnownNamespace): UnicodeString;
 begin
-  case Namespace of
-    xsRDF: Result := RDF.PreferredPrefix;
-    xsCameraRaw: Result := 'crs';
-    xsColorant: Result := 'xmpG';
-    xsDimensions: Result := 'stDim';
-    xsDublinCore: Result := 'dc';
-    xsFont: Result := 'stFnt';
-    xsExif: Result := 'exif';
-    xsExifAux: Result := 'aux';
-    xsIPTC: Result := 'Iptc4xmpCore';
-    xsJob: Result := 'stJob';
-    xsMicrosoftPhoto: Result := 'MicrosoftPhoto';
-    xsPDF: Result := 'pdf';
-    xsPhotoshop: Result := 'photoshop';
-    xsResourceEvent: Result := 'stEvt';
-    xsResourceRef: Result := 'stRef';
-    xsThumbnail: Result := 'xmpGImg';
-    xsTIFF: Result := 'tiff';
-    xsVersion: Result := 'stVer';
-    xsXMPBasic: Result := 'xmp';
-    xsXMPBasicJobTicket: Result := 'xmpBJ';
-    xsXMPDynamicMedia: Result := 'xmpDM';
-    xsXMPMediaManagement: Result := 'xmpMM';
-    xsXMPPagedText: Result := 'xmpTPg';
-    xsXMPRights: Result := 'xmpRights';
-  else Assert(False);
-  end;
+  Result := PreferredPrefixes[Namespace];
 end;
 
 class function TKnownXMPNamespaces.GetURI(Namespace: TXMPKnownNamespace): UnicodeString;
 begin
-  NeedKnownURIs;
-  Result := FKnownURIs[FKnownIndices[Namespace]];
+  Result := KnownURIs[Namespace];
 end;
 
 class function TKnownXMPNamespaces.Find(const URI: UnicodeString; out Namespace: TXMPNamespace): Boolean;
 var
-  Index: Integer;
+  I: TXMPKnownNamespace;
 begin
-  NeedKnownURIs;
-  Result := FKnownURIs.Find(URI, Index);
-  if Result then
-    Namespace := TXMPNamespace(FKnownURIs.Objects[Index])
-  else
-    Namespace := xsUnknown;
+  for I := Low(KnownURIs) to High(KnownURIs) do
+    if URI = KnownURIs[I] then
+    begin
+      Namespace := I;
+      Result := True;
+      Exit;
+    end;
+  Namespace := xsUnknown;
+  Result := False;
 end;
 
 { TStringListThatOwnsItsObjects }
@@ -594,19 +669,27 @@ var
   I: Integer;
 begin
   for I := Count - 1 downto 0 do
+    {$IFDEF NEXTGEN}
+    Objects[I].DisposeOf;
+    {$ELSE}
     Objects[I].Free;
+    {$ENDIF}
   inherited;
 end;
 
 procedure TStringListThatOwnsItsObjects.Delete(Index: Integer);
 begin
+  {$IFDEF NEXTGEN}
+  Objects[Index].DisposeOf;
+  {$ELSE}
   Objects[Index].Free;
+  {$ENDIF}
   inherited;
 end;
 
 { TXMPPropertyEnumerator }
 
-constructor TXMPPropertyEnumerator.Create(Source: TList);
+constructor TXMPPropertyEnumerator.Create(Source: TObjectList);
 begin
   FIndex := -1;
   FSource := Source;
@@ -614,7 +697,7 @@ end;
 
 function TXMPPropertyEnumerator.GetCurrent: TXMPProperty;
 begin
-  Result := FSource[FIndex];
+  Result := TXMPProperty(FSource[FIndex]);
 end;
 
 function TXMPPropertyEnumerator.MoveNext: Boolean;
@@ -981,6 +1064,16 @@ begin
   Result := StrToIntDef(ReadValue, Default);
 end;
 
+function TXMPProperty.ReadValue(const Default: TDateTime): TDateTime;
+begin
+  try
+    Result := XMPStringToDateTime(ReadValue);
+  except
+    on EConvertError do
+      Result := Default;
+  end;
+end;
+
 function TXMPProperty.ReadValue(const Default: UnicodeString): UnicodeString;
 var
   I: Integer;
@@ -1009,7 +1102,7 @@ begin
   Result := False;
   for I := 0 to SubPropertyCount - 1 do
   begin
-    Prop := FSubProperties.List[I];
+    Prop := TXMPProperty(FSubProperties[I]);
     if AName = Prop.Name then
     begin
       FSubProperties.Delete(I);
@@ -1147,7 +1240,7 @@ begin
       BeginPos := 1;
       TotalLen := Length(NewValue);
       for I := 1 to TotalLen do
-        if CharInSet(NewValue[I], [',', ';']) then
+        if IsCharIn(NewValue[I], [',', ';']) then
         begin
           Strings.Add(Copy(NewValue, BeginPos, I - BeginPos));
           BeginPos := I + 1;
@@ -1160,6 +1253,11 @@ begin
       Strings.Free;
     end;
   end;
+end;
+
+procedure TXMPProperty.WriteValue(const NewValue: TDateTime);
+begin
+  WriteValue(DateTimeToXMPString(NewValue));
 end;
 
 procedure TXMPProperty.WriteValue(const NewValue: Integer);
@@ -1251,7 +1349,7 @@ end;
 
 function TXMPSchema.GetProperty(Index: Integer): TXMPProperty;
 begin
-  Result := FProperties[Index];
+  Result := TXMPProperty(FProperties[Index]);
 end;
 
 function TXMPSchema.GetPropertyCount: Integer;
@@ -1291,7 +1389,7 @@ begin
   Result := False;
   for I := FProperties.Count - 1 downto 0 do
   begin
-    Prop := FProperties.List[I];
+    Prop := TXMPProperty(FProperties[I]);
     for J := High(ANames) downto Low(ANames) do
       if Prop.Name = ANames[J] then
       begin
@@ -1666,7 +1764,7 @@ procedure TXMPPacket.SaveToStream(Stream: TStream);
         Continue;
       end;
       if IsArrayElem then
-        Stream.WriteByte(#10)
+        Stream.WriteByte(10)
       else
         Stream.WriteUTF8Chars('%s<%s%s>'#10, [Indent, QualName, NSDecl]);
       case Prop.Kind of
@@ -1706,7 +1804,7 @@ var
 begin
   if FRawXMLCache <> '' then
   begin
-    Stream.WriteUTF8Chars(FRawXMLCache);
+    Stream.WriteBuffer(FRawXMLCache[1], Length(FRawXMLCache));
     if FRawXMLCache[Length(FRawXMLCache)] <> ' ' then
       Stream.WriteBuffer(PaddingByte, 1); //see note above
     Exit;
@@ -1724,15 +1822,15 @@ begin
     Stream.WriteBuffer(DataPtr^, DataSize);
     Exit;
   end;
-  Stream.WriteUTF8Chars(PacketStart);
+  Stream.WriteBuffer(PacketStart[1], Length(PacketStart));
   for Schema in Self do
   begin
     Stream.WriteUTF8Chars(DescNodeStart, [AboutAttributeValue,
       Schema.NamespaceInfo.Prefix, Schema.NamespaceInfo.URI]);
     WriteProps(Schema, 3, Schema);
-    Stream.WriteUTF8Chars(DescNodeEnd);
+    Stream.WriteBuffer(DescNodeEnd[1], Length(DescNodeEnd));
   end;
-  Stream.WriteUTF8Chars(PacketEnd);
+  Stream.WriteBuffer(PacketEnd[1], Length(PacketEnd));
 end;
 
 procedure TXMPPacket.SetDataToLazyLoad(const Value: IMetadataBlock);
@@ -1760,6 +1858,8 @@ begin
 end;
 
 function TXMPPacket.TryLoadFromStream(Stream: TStream): Boolean;
+const
+  XPacketStart: array[0..9] of AnsiChar = '<?xpacket ';
 var
   I: Integer;
   CharsPtr: PAnsiChar;
@@ -1781,7 +1881,7 @@ begin
     if not (Document as IDOMPersist).loadFromStream(NewStream) then Exit;
     if not FindRootRDFNode(Document, RootRDFNode) then Exit;
     Clear(True);
-    if StrLComp(CharsPtr, PAnsiChar('<?xpacket '), 10) = 0 then
+    if (NewStream.Size > SizeOf(XPacketStart)) and CompareMem(CharsPtr, @XPacketStart, SizeOf(XPacketStart)) then
       SetString(FRawXMLCache, CharsPtr, NewStream.Size)
     else
       FRawXMLCache := UTF8Encode((Document as IDOMPersist).xml)
@@ -1967,6 +2067,134 @@ begin
   end;
 end;
 
+function TXMPPacket.ReadBool(SchemaKind: TXMPKnownNamespace; const PropertyName: string; DefValue: Boolean): Boolean;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaKind, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadBool(const SchemaURI: string; const PropertyName: string; DefValue: Boolean): Boolean;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaURI, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadDateTime(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const DefValue: TDateTime): TDateTime;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaKind, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadDateTime(const SchemaURI: string; const PropertyName: string; const DefValue: TDateTime): TDateTime;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaURI, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadInteger(SchemaKind: TXMPKnownNamespace; const PropertyName: string; DefValue: Integer): Integer;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaKind, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadInteger(const SchemaURI: string; const PropertyName: string; DefValue: Integer): Integer;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaURI, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadString(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const DefValue: string): string;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaKind, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+function TXMPPacket.ReadString(const SchemaURI: string; const PropertyName: string; const DefValue: string): string;
+var
+  Prop: TXMPProperty;
+  Schema: TXMPSchema;
+begin
+  if FindSchema(SchemaURI, Schema) and Schema.FindProperty(PropertyName, Prop) then
+    Result := Prop.ReadValue(DefValue)
+  else
+    Result := DefValue;
+end;
+
+procedure TXMPPacket.WriteBool(SchemaKind: TXMPKnownNamespace; const PropertyName: string; Value: Boolean);
+begin
+  Schemas[SchemaKind].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteBool(const SchemaURI: string; const PropertyName: string; Value: Boolean);
+begin
+  Schemas[SchemaURI].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteDateTime(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const Value: TDateTime);
+begin
+  Schemas[SchemaKind].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteDateTime(const SchemaURI: string; const PropertyName: string; const Value: TDateTime);
+begin
+  Schemas[SchemaURI].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteInteger(SchemaKind: TXMPKnownNamespace; const PropertyName: string; Value: Integer);
+begin
+  Schemas[SchemaKind].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteInteger(const SchemaURI: string; const PropertyName: string; Value: Integer);
+begin
+  Schemas[SchemaURI].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteString(SchemaKind: TXMPKnownNamespace; const PropertyName: string; const Value: string);
+begin
+  Schemas[SchemaKind].Properties[PropertyName].WriteValue(Value);
+end;
+
+procedure TXMPPacket.WriteString(const SchemaURI: string; const PropertyName: string; const Value: string);
+begin
+  Schemas[SchemaURI].Properties[PropertyName].WriteValue(Value);
+end;
+
 { TXMPPacket.TEnumerator }
 
 constructor TXMPPacket.TEnumerator.Create(Packet: TXMPPacket);
@@ -1994,6 +2222,4 @@ initialization
     InitProc := nil;      //automatically with a VCL app (the RTL's MSXML wrapper uses
   end;                    //ComObj.pas, which assigns InitProc, which is called by
 {$ENDIF}                  //Application.Initialize), but not in a console one.
-finalization
-  TKnownXMPNamespaces.FKnownURIs.Free;
 end.
