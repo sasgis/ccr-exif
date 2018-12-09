@@ -41,10 +41,6 @@
   {$DEFINE HasFormatSettings}
 {$IFEND}
 
-{$IF CompilerVersion >= 24}
-  {$DEFINE XE3+}
-{$IFEND}
-
 {$IF (CompilerVersion = 26) AND Defined(NEXTGEN)}
   {$DEFINE NeedHausladenByteStringsFix}
 {$IFEND}
