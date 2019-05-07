@@ -121,6 +121,7 @@ type
       FDisableChanges: Boolean;
     protected
       function Realloc(var NewCapacity: Longint): Pointer; override;
+    {$IF CompilerVersion < 33} protected {$ELSE} public {$IFEND}
       procedure SetSize(const NewSize: Int64); override;
     public
       destructor Destroy; override;
