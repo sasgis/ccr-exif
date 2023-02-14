@@ -36,7 +36,13 @@ interface
 
 uses
   Types, SysUtils, Classes, {$IFDEF HasGenerics}Generics.Collections, Generics.Defaults,{$ENDIF}
-  {$IFDEF VCL}Jpeg,{$ENDIF} CCR.Exif.BaseUtils, CCR.Exif.TagIDs, CCR.Exif.TiffUtils;
+  {$IFDEF VCL}
+  {$IF CompilerVersion < 35}
+  Jpeg,
+  {$ELSE}
+  Vcl.Imaging.jpeg,
+  {$IFEND}
+  {$ENDIF} CCR.Exif.BaseUtils, CCR.Exif.TagIDs, CCR.Exif.TiffUtils;
 
 type
   EInvalidIPTCData = class(ECCRExifException);
